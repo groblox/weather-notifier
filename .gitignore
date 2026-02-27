@@ -1,0 +1,16 @@
+# Environment & secrets
+.env
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+
+# Runtime files
+*.log
+notification_cooldown.json
+test_output.txt
+
+# IDE
+.vscode/
+.idea/
