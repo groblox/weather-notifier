@@ -24,11 +24,18 @@ from config import (
     AERIS_BASE_URL,
     AERIS_CLIENT_ID,
     AERIS_CLIENT_SECRET,
+    ALERT_FIRST_FREEZE,
+    ALERT_HEAT_WAVE,
+    ALERT_RAINFALL,
+    ALERT_SHOULDER_FREEZE,
+    ALERT_SNOW_CHANCE,
+    ALERT_TEMP_DROP,
     COOLDOWN_FILE,
     FIRST_FREEZE_SEASON_END,
     FIRST_FREEZE_SEASON_START,
     FREEZE_THRESHOLD_F,
     HEAT_WAVE_CONSECUTIVE_DAYS,
+    HEAT_WAVE_COOLDOWN_DAYS,
     HEAT_WAVE_THRESHOLD_F,
     PUSHOVER_API_TOKEN,
     PUSHOVER_USER_KEY,
@@ -36,8 +43,8 @@ from config import (
     SHOULDER_FREEZE_MONTHS,
     SHOULDER_FREEZE_THRESHOLD_F,
     SNOW_CHANCE_THRESHOLD_PERCENT,
+    SNOW_COOLDOWN_DAYS,
     STATION_ID,
-
     TEMP_DROP_COOLDOWN_DAYS,
     TEMP_DROP_THRESHOLD_F,
 )
@@ -325,7 +332,7 @@ def check_heat_wave() -> tuple[bool, list, int]:
     last_heat_alert = data.get('last_heat_wave_alert')
     if last_heat_alert:
         last_alert_date = datetime.fromisoformat(last_heat_alert)
-        if datetime.now() < last_alert_date + timedelta(days=7):
+        if datetime.now() < last_alert_date + timedelta(days=HEAT_WAVE_COOLDOWN_DAYS):
             logger.info("Heat wave notification on cooldown")
             return False, [], 0
     
@@ -394,7 +401,7 @@ def check_snow_chance() -> tuple[bool, float, str]:
     last_snow_alert = data.get('last_snow_alert')
     if last_snow_alert:
         last_alert_date = datetime.fromisoformat(last_snow_alert)
-        if datetime.now() < last_alert_date + timedelta(days=3):
+        if datetime.now() < last_alert_date + timedelta(days=SNOW_COOLDOWN_DAYS):
             logger.info("Snow notification on cooldown")
             return False, 0.0, ""
     
@@ -517,6 +524,10 @@ def run_shoulder_freeze_check(test_mode: bool = False):
     logger.info(f"Station: {STATION_ID}")
     logger.info("=" * 50)
     
+    if not ALERT_SHOULDER_FREEZE:
+        logger.info("Shoulder freeze alert is disabled, skipping")
+        return
+    
     should_notify, low_temp, desc = check_shoulder_freeze()
     if should_notify:
         title = "Freeze Warning Tonight!"
@@ -541,64 +552,79 @@ def run_checks(test_mode: bool = False):
     logger.info("=" * 50)
     
     # Check rainfall
-    should_notify_rain, rainfall = check_rainfall()
-    if should_notify_rain:
-        title = "🌧️ Significant Rainfall Yesterday"
-        message = f"Station {STATION_ID} recorded {rainfall:.2f} inches of rain yesterday."
-        
-        if test_mode:
-            logger.info(f"[TEST MODE] Would send notification: {title} - {message}")
-        else:
-            send_pushover_notification(title, message)
+    if ALERT_RAINFALL:
+        should_notify_rain, rainfall = check_rainfall()
+        if should_notify_rain:
+            title = "🌧️ Significant Rainfall Yesterday"
+            message = f"Station {STATION_ID} recorded {rainfall:.2f} inches of rain yesterday."
+            
+            if test_mode:
+                logger.info(f"[TEST MODE] Would send notification: {title} - {message}")
+            else:
+                send_pushover_notification(title, message)
+    else:
+        logger.info("Rainfall alert disabled, skipping")
     
     # Check temperature drop
-    should_notify_temp, max_drop, drop_desc = check_temp_drop()
-    if should_notify_temp:
-        title = "Major Temperature Drop Coming"
-        message = f"Expect a {max_drop:.0f}F temperature drop!\n{drop_desc}"
-        
-        if test_mode:
-            logger.info(f"[TEST MODE] Would send notification: {title} - {message}")
-        else:
-            if send_pushover_notification(title, message, priority=1):
-                set_temp_drop_cooldown()
+    if ALERT_TEMP_DROP:
+        should_notify_temp, max_drop, drop_desc = check_temp_drop()
+        if should_notify_temp:
+            title = "Major Temperature Drop Coming"
+            message = f"Expect a {max_drop:.0f}F temperature drop!\n{drop_desc}"
+            
+            if test_mode:
+                logger.info(f"[TEST MODE] Would send notification: {title} - {message}")
+            else:
+                if send_pushover_notification(title, message, priority=1):
+                    set_temp_drop_cooldown()
+    else:
+        logger.info("Temp drop alert disabled, skipping")
     
     # Check first freeze of season
-    should_notify_freeze, freeze_temp, freeze_date = check_first_freeze()
-    if should_notify_freeze:
-        title = "First Freeze of Season Coming!"
-        message = f"Low of {freeze_temp:.0f}F expected on {freeze_date}. Protect plants and pipes!"
-        
-        if test_mode:
-            logger.info(f"[TEST MODE] Would send notification: {title} - {message}")
-        else:
-            if send_pushover_notification(title, message, priority=1):
-                set_first_freeze_cooldown()
+    if ALERT_FIRST_FREEZE:
+        should_notify_freeze, freeze_temp, freeze_date = check_first_freeze()
+        if should_notify_freeze:
+            title = "First Freeze of Season Coming!"
+            message = f"Low of {freeze_temp:.0f}F expected on {freeze_date}. Protect plants and pipes!"
+            
+            if test_mode:
+                logger.info(f"[TEST MODE] Would send notification: {title} - {message}")
+            else:
+                if send_pushover_notification(title, message, priority=1):
+                    set_first_freeze_cooldown()
+    else:
+        logger.info("First freeze alert disabled, skipping")
     
     # Check heat wave
-    should_notify_heat, hot_days, heat_count = check_heat_wave()
-    if should_notify_heat:
-        title = "Heat Wave Alert!"
-        temps_str = ", ".join([f"{d['date']}: {d['high']}F" for d in hot_days[:3]])
-        message = f"{heat_count} days of extreme heat ({HEAT_WAVE_THRESHOLD_F}F+) forecast!\n{temps_str}"
-        
-        if test_mode:
-            logger.info(f"[TEST MODE] Would send notification: {title} - {message}")
-        else:
-            if send_pushover_notification(title, message, priority=1):
-                set_heat_wave_cooldown()
+    if ALERT_HEAT_WAVE:
+        should_notify_heat, hot_days, heat_count = check_heat_wave()
+        if should_notify_heat:
+            title = "Heat Wave Alert!"
+            temps_str = ", ".join([f"{d['date']}: {d['high']}F" for d in hot_days[:3]])
+            message = f"{heat_count} days of extreme heat ({HEAT_WAVE_THRESHOLD_F}F+) forecast!\n{temps_str}"
+            
+            if test_mode:
+                logger.info(f"[TEST MODE] Would send notification: {title} - {message}")
+            else:
+                if send_pushover_notification(title, message, priority=1):
+                    set_heat_wave_cooldown()
+    else:
+        logger.info("Heat wave alert disabled, skipping")
     
     # Check snow chance
-    should_notify_snow, snow_prob, snow_date = check_snow_chance()
-    if should_notify_snow:
-        title = "Snow in the Forecast!"
-        message = f"{snow_prob:.0f}% chance of snow on {snow_date}."
-        
-        if test_mode:
-            logger.info(f"[TEST MODE] Would send notification: {title} - {message}")
-        else:
-            if send_pushover_notification(title, message):
-                set_snow_cooldown()
+    if ALERT_SNOW_CHANCE:
+        should_notify_snow, snow_prob, snow_date = check_snow_chance()
+        if should_notify_snow:
+            title = "Snow in the Forecast!"
+            message = f"{snow_prob:.0f}% chance of snow on {snow_date}."
+            
+            if test_mode:
+                logger.info(f"[TEST MODE] Would send notification: {title} - {message}")
+            else:
+                if send_pushover_notification(title, message):
+                    set_snow_cooldown()
+    else:
+        logger.info("Snow chance alert disabled, skipping")
     
     logger.info("Weather check complete.")
 

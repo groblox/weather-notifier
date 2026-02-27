@@ -70,7 +70,7 @@ It runs silently via Windows Task Scheduler — no browser, no dashboard, just t
   </tr>
 </table>
 
-> All thresholds are configurable in `config.py`.
+> All triggers, cooldowns, schedules, and alert toggles are fully configurable in `.env`.
 
 ## 🏗️ Architecture
 
@@ -100,13 +100,14 @@ It runs silently via Windows Task Scheduler — no browser, no dashboard, just t
 ```
 weather-notifier/
 ├── weather_notifier.py       # Main application — all check logic
-├── config.py                 # Configuration & thresholds (loads .env)
+├── config.py                 # Configuration loader (reads .env)
 ├── test_weather_notifier.py  # 45 unit tests (mocked API, no network)
-├── requirements.txt          # Python dependencies
+├── setup.bat                 # Guided interactive setup
 ├── install_scheduler.bat     # Register Windows scheduled tasks
 ├── uninstall_scheduler.bat   # Remove scheduled tasks
-├── .env.example              # Template for API credentials
-└── .env                      # Your API keys (gitignored)
+├── requirements.txt          # Python dependencies
+├── .env.example              # Template for all configuration options
+└── .env                      # Your config (gitignored)
 ```
 
 ## 🚀 Getting Started
@@ -118,51 +119,37 @@ weather-notifier/
 - [Aeris Weather](https://www.aerisweather.com/) API credentials
 - [Pushover](https://pushover.net/) account with an application token
 
-### 1. Clone & Install
+### Quick Setup
 
-```bash
+Run `setup.bat` as Administrator — it walks you through everything:
+
+```
 git clone https://github.com/groblox/weather-notifier.git
 cd weather-notifier
+setup.bat
+```
+
+The guided installer will:
+1. ✅ Check for Python
+2. 📦 Install dependencies
+3. 🔑 Prompt for API keys
+4. 📡 Configure your station ID
+5. ⏰ Set schedule times
+6. 📝 Write `.env`
+7. 🗓️ Register scheduled tasks
+8. 🧪 Verify API connection and send a test notification
+
+### Manual Setup
+
+If you prefer to configure manually:
+
+```bash
 pip install -r requirements.txt
-```
-
-### 2. Configure
-
-Copy the example environment file and add your API keys:
-
-```bash
-cp .env.example .env
-```
-
-Then edit `.env`:
-
-```ini
-AERIS_CLIENT_ID=your_aeris_client_id
-AERIS_CLIENT_SECRET=your_aeris_client_secret
-PUSHOVER_USER_KEY=your_pushover_user_key
-PUSHOVER_API_TOKEN=your_pushover_api_token
-```
-
-### 3. Verify Setup
-
-```bash
-# Test API connectivity
+cp .env.example .env        # Edit .env with your API keys
 python weather_notifier.py --test-api
-
-# Send a test push notification
 python weather_notifier.py --test-notify
+install_scheduler.bat       # Run as Administrator
 ```
-
-### 4. Schedule
-
-Run `install_scheduler.bat` **as Administrator** to register two daily tasks:
-
-| Task | Time | Checks |
-|------|------|--------|
-| `WeatherNotifier` | 6:40 AM | All alerts |
-| `WeatherNotifier-ShoulderFreeze` | 4:15 PM | Shoulder freeze only (Mar/Nov) |
-
-To uninstall: run `uninstall_scheduler.bat` as Administrator.
 
 ## 🛠️ CLI Reference
 
@@ -201,10 +188,34 @@ python -m unittest test_weather_notifier -v
 
 ## ⚙️ Configuration
 
-All thresholds in `config.py` can be tuned to your preferences:
+All settings live in `.env` — edit to customize, or leave defaults. See [`.env.example`](.env.example) for the full reference.
 
-| Parameter | Default | Description |
-|-----------|---------|-------------|
+### API Keys (required)
+
+| Variable | Description |
+|----------|-------------|
+| `AERIS_CLIENT_ID` | Aeris Weather API client ID |
+| `AERIS_CLIENT_SECRET` | Aeris Weather API client secret |
+| `PUSHOVER_USER_KEY` | Pushover user key |
+| `PUSHOVER_API_TOKEN` | Pushover application token |
+
+### Alert Toggles
+
+Disable any alert by setting its toggle to `false`:
+
+```ini
+ALERT_RAINFALL=true
+ALERT_TEMP_DROP=true
+ALERT_FIRST_FREEZE=true
+ALERT_HEAT_WAVE=true
+ALERT_SNOW_CHANCE=true
+ALERT_SHOULDER_FREEZE=true
+```
+
+### Thresholds
+
+| Variable | Default | Description |
+|----------|---------|-------------|
 | `STATION_ID` | `pws_kalhoove43` | Your PWS station identifier |
 | `RAINFALL_THRESHOLD_INCHES` | `0.25` | Min rainfall to trigger alert |
 | `TEMP_DROP_THRESHOLD_F` | `20` | Min temp drop (°F) within 3 days |
@@ -213,8 +224,30 @@ All thresholds in `config.py` can be tuned to your preferences:
 | `HEAT_WAVE_CONSECUTIVE_DAYS` | `3` | Days of heat to qualify as wave |
 | `SNOW_CHANCE_THRESHOLD_PERCENT` | `30` | Min snow probability (%) |
 | `SHOULDER_FREEZE_THRESHOLD_F` | `33` | Shoulder season overnight low |
-| `TEMP_DROP_COOLDOWN_DAYS` | `5` | Cooldown between temp drop alerts |
+
+### Cooldowns
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `TEMP_DROP_COOLDOWN_DAYS` | `5` | Days between temp drop alerts |
+| `HEAT_WAVE_COOLDOWN_DAYS` | `7` | Days between heat wave alerts |
+| `SNOW_COOLDOWN_DAYS` | `3` | Days between snow alerts |
+
+### Schedule
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `SCHEDULE_MORNING` | `06:40` | Morning check time (all alerts) |
+| `SCHEDULE_AFTERNOON` | `16:15` | Afternoon check (shoulder freeze) |
+
+### Seasons
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `FIRST_FREEZE_SEASON_START` | `10` | Month to start watching (October) |
+| `FIRST_FREEZE_SEASON_END` | `12` | Month to stop watching (December) |
+| `SHOULDER_FREEZE_MONTHS` | `3,11` | Shoulder freeze months (Mar, Nov) |
 
 ## 📄 License
 
-This project is licensed under the MIT License.
+This project is licensed under the [MIT License](LICENSE).
