@@ -49,6 +49,7 @@ ALERT_FIRST_FREEZE = _bool(os.getenv("ALERT_FIRST_FREEZE", "true"))
 ALERT_HEAT_WAVE = _bool(os.getenv("ALERT_HEAT_WAVE", "true"))
 ALERT_SNOW_CHANCE = _bool(os.getenv("ALERT_SNOW_CHANCE", "true"))
 ALERT_SHOULDER_FREEZE = _bool(os.getenv("ALERT_SHOULDER_FREEZE", "true"))
+ALERT_DAILY_FORECAST = _bool(os.getenv("ALERT_DAILY_FORECAST", "true"))
 
 # =============================================================================
 #  Thresholds

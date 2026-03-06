@@ -68,6 +68,12 @@ It runs silently via Windows Task Scheduler — no browser, no dashboard, just t
     <td>Once per day</td>
     <td>4:15 PM</td>
   </tr>
+  <tr>
+    <td>☀️ <strong>Daily Forecast</strong></td>
+    <td>Precip chance &gt; 30%</td>
+    <td>—</td>
+    <td>6:40 AM</td>
+  </tr>
 </table>
 
 > All triggers, cooldowns, schedules, and alert toggles are fully configurable in `.env`.
@@ -154,13 +160,14 @@ install_scheduler.bat       # Run as Administrator
 ## 🛠️ CLI Reference
 
 ```
-usage: weather_notifier.py [-h] [--test-api] [--test-notify] [--dry-run] [--shoulder-freeze]
+usage: weather_notifier.py [-h] [--test-api] [--test-notify] [--dry-run] [--shoulder-freeze] [--daily-forecast]
 
 options:
   --test-api          Test API connectivity and display current data
   --test-notify       Send a test notification via Pushover
   --dry-run           Run all checks but suppress notifications
   --shoulder-freeze   Run only the shoulder season freeze check
+  --daily-forecast    Run only the daily forecast notification
 ```
 
 **Examples:**
@@ -210,6 +217,7 @@ ALERT_FIRST_FREEZE=true
 ALERT_HEAT_WAVE=true
 ALERT_SNOW_CHANCE=true
 ALERT_SHOULDER_FREEZE=true
+ALERT_DAILY_FORECAST=true
 ```
 
 ### Thresholds

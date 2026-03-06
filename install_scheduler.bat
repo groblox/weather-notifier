@@ -10,9 +10,21 @@ echo.
 REM Get the directory where this script is located
 set SCRIPT_DIR=%~dp0
 
-REM Find Python path
-for /f "delims=" %%i in ('where python') do set PYTHON_PATH=%%i
-if "%PYTHON_PATH%"=="" (
+REM Find Python path (skip the Microsoft Store stub which fails in Task Scheduler)
+set PYTHON_PATH=
+for /f "delims=" %%i in ('where python 2^>nul') do (
+    echo %%i | findstr /i /c:"WindowsApps" >nul
+    if errorlevel 1 (
+        if not defined PYTHON_PATH set "PYTHON_PATH=%%i"
+    )
+)
+if not defined PYTHON_PATH (
+    echo WARNING: Could not find non-Store Python, falling back to first match...
+    for /f "delims=" %%i in ('where python 2^>nul') do (
+        if not defined PYTHON_PATH set "PYTHON_PATH=%%i"
+    )
+)
+if not defined PYTHON_PATH (
     echo ERROR: Python not found in PATH
     echo Please install Python and add it to your PATH
     pause
@@ -45,10 +57,11 @@ if exist "%SCRIPT_DIR%.env" (
 )
 
 REM Create the scheduled task
+REM Use cmd /c with cd /d to set the working directory so the script can find .env
 echo Creating scheduled task "WeatherNotifier" at %MORNING_TIME%...
 
 schtasks /create /tn "WeatherNotifier" ^
-    /tr "\"%PYTHON_PATH%\" \"%SCRIPT_DIR%weather_notifier.py\"" ^
+    /tr "cmd /c cd /d \"%SCRIPT_DIR%.\" && \"%PYTHON_PATH%\" \"%SCRIPT_DIR%weather_notifier.py\"" ^
     /sc daily ^
     /st %MORNING_TIME% ^
     /rl HIGHEST ^
@@ -65,7 +78,7 @@ echo.
 echo Creating shoulder season freeze check task at %AFTERNOON_TIME%...
 
 schtasks /create /tn "WeatherNotifier-ShoulderFreeze" ^
-    /tr "\"%PYTHON_PATH%\" \"%SCRIPT_DIR%weather_notifier.py\" --shoulder-freeze" ^
+    /tr "cmd /c cd /d \"%SCRIPT_DIR%.\" && \"%PYTHON_PATH%\" \"%SCRIPT_DIR%weather_notifier.py\" --shoulder-freeze" ^
     /sc daily ^
     /st %AFTERNOON_TIME% ^
     /rl HIGHEST ^

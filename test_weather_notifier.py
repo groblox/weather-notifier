@@ -518,6 +518,7 @@ class TestCooldownSystem(_CooldownMixin, unittest.TestCase):
 class TestRunChecks(_CooldownMixin, unittest.TestCase):
     """Integration test for the run_checks() orchestrator."""
 
+    @patch.object(wn, "run_daily_forecast")  # no-op so it doesn't affect counts
     @patch.object(wn, "send_pushover_notification", return_value=True)
     @patch.object(wn, "check_snow_chance", return_value=(False, 0.0, ""))
     @patch.object(wn, "check_heat_wave", return_value=(False, [], 0))
@@ -525,7 +526,7 @@ class TestRunChecks(_CooldownMixin, unittest.TestCase):
     @patch.object(wn, "check_temp_drop", return_value=(True, 25.0, "2026-02-20 (70°F) → 2026-02-22 (45°F)"))
     @patch.object(wn, "check_rainfall", return_value=(True, 0.50))
     def test_sends_notifications_for_triggered_checks(
-        self, mock_rain, mock_temp, mock_freeze, mock_heat, mock_snow, mock_notify
+        self, mock_rain, mock_temp, mock_freeze, mock_heat, mock_snow, mock_notify, mock_daily
     ):
         wn.run_checks(test_mode=False)
 
@@ -537,6 +538,7 @@ class TestRunChecks(_CooldownMixin, unittest.TestCase):
         self.assertIn("🌧️ Significant Rainfall Yesterday", call_titles)
         self.assertIn("Major Temperature Drop Coming", call_titles)
 
+    @patch.object(wn, "run_daily_forecast")
     @patch.object(wn, "send_pushover_notification", return_value=True)
     @patch.object(wn, "check_snow_chance", return_value=(False, 0.0, ""))
     @patch.object(wn, "check_heat_wave", return_value=(False, [], 0))
@@ -544,11 +546,12 @@ class TestRunChecks(_CooldownMixin, unittest.TestCase):
     @patch.object(wn, "check_temp_drop", return_value=(False, 5.0, ""))
     @patch.object(wn, "check_rainfall", return_value=(False, 0.05))
     def test_no_notifications_when_nothing_triggered(
-        self, mock_rain, mock_temp, mock_freeze, mock_heat, mock_snow, mock_notify
+        self, mock_rain, mock_temp, mock_freeze, mock_heat, mock_snow, mock_notify, mock_daily
     ):
         wn.run_checks(test_mode=False)
         mock_notify.assert_not_called()
 
+    @patch.object(wn, "run_daily_forecast")
     @patch.object(wn, "send_pushover_notification", return_value=True)
     @patch.object(wn, "check_snow_chance", return_value=(True, 60.0, "2026-01-21"))
     @patch.object(wn, "check_heat_wave", return_value=(True, [{"date": "2026-07-01", "high": 98}], 3))
@@ -556,11 +559,12 @@ class TestRunChecks(_CooldownMixin, unittest.TestCase):
     @patch.object(wn, "check_temp_drop", return_value=(True, 25.0, "drop desc"))
     @patch.object(wn, "check_rainfall", return_value=(True, 1.0))
     def test_dry_run_sends_no_real_notifications(
-        self, mock_rain, mock_temp, mock_freeze, mock_heat, mock_snow, mock_notify
+        self, mock_rain, mock_temp, mock_freeze, mock_heat, mock_snow, mock_notify, mock_daily
     ):
         wn.run_checks(test_mode=True)
         mock_notify.assert_not_called()
 
+    @patch.object(wn, "run_daily_forecast")
     @patch.object(wn, "send_pushover_notification", return_value=True)
     @patch.object(wn, "check_snow_chance", return_value=(True, 80.0, "2026-01-22"))
     @patch.object(wn, "check_heat_wave", return_value=(True, [{"date": "2026-07-02", "high": 99}, {"date": "2026-07-03", "high": 100}, {"date": "2026-07-04", "high": 101}], 3))
@@ -568,11 +572,63 @@ class TestRunChecks(_CooldownMixin, unittest.TestCase):
     @patch.object(wn, "check_temp_drop", return_value=(True, 30.0, "big drop"))
     @patch.object(wn, "check_rainfall", return_value=(True, 2.0))
     def test_all_alerts_fire(
-        self, mock_rain, mock_temp, mock_freeze, mock_heat, mock_snow, mock_notify
+        self, mock_rain, mock_temp, mock_freeze, mock_heat, mock_snow, mock_notify, mock_daily
     ):
         """When every check triggers, 5 notifications should be sent."""
         wn.run_checks(test_mode=False)
         self.assertEqual(mock_notify.call_count, 5)
+
+
+# ===================================================================
+#  DAILY FORECAST TESTS
+# ===================================================================
+class TestDailyForecast(unittest.TestCase):
+    """Tests for get_daily_forecast()."""
+
+    @patch.object(wn, "aeris_request")
+    def test_returns_formatted_summary(self, mock_api):
+        mock_api.return_value = _forecast_response([
+            {
+                "maxTempF": 76, "minTempF": 54,
+                "weatherPrimary": "Partly Cloudy",
+                "pop": 20, "avgHumidity": 65,
+                "windSpeedMaxMPH": 12, "windDir": "SSW",
+                "dateTimeISO": "2026-03-01T00:00:00",
+            }
+        ])
+        success, message = wn.get_daily_forecast()
+        self.assertTrue(success)
+        self.assertIn("76", message)
+        self.assertIn("54", message)
+        self.assertIn("Partly Cloudy", message)
+        self.assertIn("20%", message)
+        self.assertIn("12 mph", message)
+        self.assertIn("SSW", message)
+
+    @patch.object(wn, "aeris_request")
+    def test_no_precip_omits_line(self, mock_api):
+        mock_api.return_value = _forecast_response([
+            {
+                "maxTempF": 80, "minTempF": 60,
+                "weatherPrimary": "Sunny", "pop": 0,
+                "dateTimeISO": "2026-03-01T00:00:00",
+            }
+        ])
+        success, message = wn.get_daily_forecast()
+        self.assertTrue(success)
+        self.assertNotIn("Precip", message)
+
+    @patch.object(wn, "aeris_request")
+    def test_empty_periods_returns_false(self, mock_api):
+        mock_api.return_value = {"success": True, "response": [{"periods": []}]}
+        success, message = wn.get_daily_forecast()
+        self.assertFalse(success)
+
+    @patch.object(wn, "aeris_request")
+    def test_api_exception_returns_false(self, mock_api):
+        mock_api.side_effect = Exception("Network error")
+        success, message = wn.get_daily_forecast()
+        self.assertFalse(success)
 
 
 # ===================================================================

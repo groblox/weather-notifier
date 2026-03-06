@@ -24,6 +24,7 @@ from config import (
     AERIS_BASE_URL,
     AERIS_CLIENT_ID,
     AERIS_CLIENT_SECRET,
+    ALERT_DAILY_FORECAST,
     ALERT_FIRST_FREEZE,
     ALERT_HEAT_WAVE,
     ALERT_RAINFALL,
@@ -542,15 +543,113 @@ def run_shoulder_freeze_check(test_mode: bool = False):
     logger.info("Shoulder freeze check complete.")
 
 
+def get_daily_forecast() -> tuple[bool, str, int]:
+    """
+    Fetch today's forecast and build a human-friendly summary.
+
+    Returns:
+        Tuple of (success, formatted_message, precip_chance_percent)
+    """
+    logger.info("Fetching daily forecast...")
+
+    try:
+        data = aeris_request(
+            f"forecasts/{STATION_ID}",
+            {'format': 'json', 'filter': 'day', 'limit': 1}
+        )
+
+        response = data.get('response', {})
+        if isinstance(response, list) and len(response) > 0:
+            response = response[0]
+
+        periods = response.get('periods', [])
+        if not periods:
+            logger.warning("No forecast data available")
+            return False, "", 0
+
+        today = periods[0]
+        high = today.get('maxTempF', 'N/A')
+        low = today.get('minTempF', 'N/A')
+        weather = today.get('weatherPrimary', today.get('weather', 'N/A'))
+        pop = today.get('pop', 0) or 0
+        dewpoint = today.get('dewpointF', today.get('avgDewpointF', 'N/A'))
+
+        # Fetch sunset time from the sunmoon endpoint
+        sundown_str = ""
+        try:
+            sun_data = aeris_request(
+                f"sunmoon/{STATION_ID}",
+                {'format': 'json'}
+            )
+            sun_response = sun_data.get('response', {})
+            if isinstance(sun_response, list) and len(sun_response) > 0:
+                sun_response = sun_response[0]
+            sun_info = sun_response.get('sun', {})
+            sunset_iso = sun_info.get('setISO', '')
+            if sunset_iso:
+                sunset_dt = datetime.fromisoformat(sunset_iso)
+                sundown_str = sunset_dt.strftime("%#I:%M%p").lower() if os.name == 'nt' else sunset_dt.strftime("%-I:%M%p").lower()
+        except Exception as e:
+            logger.warning(f"Could not fetch sunset time: {e}")
+
+        lines = [
+            f"🌡️ High: {high}°F  |  Low: {low}°F",
+            f"🌤️ {weather}",
+            f"🌧️ Precip: {pop}%",
+        ]
+
+        if dewpoint and dewpoint != 'N/A':
+            lines.append(f"💧 Dew Point: {dewpoint}")
+
+        if sundown_str:
+            lines.append(f"🌅 Sundown: {sundown_str}")
+
+        message = "\n".join(lines)
+        logger.info(f"Daily forecast: {message}")
+        return True, message, int(pop)
+
+    except Exception as e:
+        logger.error(f"Error fetching daily forecast: {e}")
+        return False, "", 0
+
+
+def run_daily_forecast(test_mode: bool = False):
+    """Fetch and send the daily weather forecast notification (only if precip > 30%)."""
+    logger.info("=" * 50)
+    logger.info("Running daily forecast...")
+    logger.info(f"Station: {STATION_ID}")
+    logger.info("=" * 50)
+
+    if not ALERT_DAILY_FORECAST:
+        logger.info("Daily forecast alert is disabled, skipping")
+        return
+
+    success, message, precip_chance = get_daily_forecast()
+    if success:
+        if precip_chance > 30:
+            title = "☀️ Today's Forecast"
+            if test_mode:
+                logger.info(f"[TEST MODE] Would send notification: {title} - {message}")
+            else:
+                send_pushover_notification(title, message)
+        else:
+            logger.info(f"Precip chance ({precip_chance}%) <= 30%, skipping daily forecast notification")
+    else:
+        logger.warning("Could not generate daily forecast")
+
+    logger.info("Daily forecast complete.")
+
+
 def run_checks(test_mode: bool = False):
-
-
     """Run all weather checks and send notifications as needed."""
     logger.info("=" * 50)
     logger.info("Starting weather check...")
     logger.info(f"Station: {STATION_ID}")
     logger.info("=" * 50)
-    
+
+    # Daily forecast (always fires first)
+    run_daily_forecast(test_mode=test_mode)
+
     # Check rainfall
     if ALERT_RAINFALL:
         should_notify_rain, rainfall = check_rainfall()
@@ -710,6 +809,11 @@ def main():
         action='store_true',
         help='Run only the shoulder season freeze check (for 4:15 PM task)'
     )
+    parser.add_argument(
+        '--daily-forecast',
+        action='store_true',
+        help='Run only the daily forecast notification'
+    )
     
     args = parser.parse_args()
     
@@ -719,6 +823,8 @@ def main():
         test_notification()
     elif args.shoulder_freeze:
         run_shoulder_freeze_check(test_mode=args.dry_run)
+    elif args.daily_forecast:
+        run_daily_forecast(test_mode=args.dry_run)
     else:
         run_checks(test_mode=args.dry_run)
 
